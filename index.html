@@ -10,7 +10,7 @@
 ║  SETUP STEPS:                                                        ║
 ║  1. Create a Supabase project at supabase.com                        ║
 ║  2. Run SUPABASE_SCHEMA_v4.sql in Supabase SQL Editor                ║
-║  3. Replace  and SUPABASE_ANON with your credentials     ║
+║  3. Replace SUPABASE_URL and SUPABASE_ANON with your credentials     ║
 ║  4. Push this file to GitHub → Settings → Pages → Deploy             ║
 ║  5. Default login: username=admin  password=admin123                 ║
 ║     ⚠ Change password immediately after first login!                ║
@@ -743,8 +743,23 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
     </div>
     <div class="nav-divider"></div>
     <div class="nav-group-label">Reports</div>
+    <div class="nav-item" onclick="navigate('pipeline')">
+      <span class="nav-icon">⇒</span>Trip Pipeline
+    </div>
+    <div class="nav-item" onclick="navigate('eway-alerts')">
+      <span class="nav-icon">⚠</span>E-Way Alerts <span id="sb-eway-badge" style="display:none;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;margin-left:4px">0</span>
+    </div>
     <div class="nav-item" onclick="navigate('report')">
       <span class="nav-icon">▤</span>Master Report
+    </div>
+    <div class="nav-item" onclick="navigate('party-ledger')">
+      <span class="nav-icon">◑</span>Party Ledger
+    </div>
+    <div class="nav-item" onclick="navigate('monthly-pl')">
+      <span class="nav-icon">▥</span>Monthly P&amp;L
+    </div>
+    <div class="nav-item" onclick="navigate('broker-outstanding')">
+      <span class="nav-icon">◐</span>Broker Outstanding
     </div>
     <div class="nav-divider"></div>
     <div class="nav-group-label">Masters</div>
@@ -772,11 +787,22 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
       <span class="page-title" id="page-title">Dashboard</span>
       <span class="page-sub" id="page-sub-label" style="display:none"></span>
     </div>
+    <div class="topbar-center" style="flex:1;max-width:360px;margin:0 16px;position:relative">
+      <input type="text" id="global-search-input" placeholder="Search SO, MF No, Lorry, Party… (press /)" autocomplete="off"
+        style="width:100%;padding:5px 10px 5px 30px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--canvas)"
+        oninput="runGlobalSearch(this.value)" onkeydown="onSearchKey(event)" onfocus="showSearchDrop()" onblur="hideSearchDrop()">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--ink4);font-size:13px;pointer-events:none">⌕</span>
+      <div id="global-search-drop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;max-height:320px;overflow-y:auto"></div>
+    </div>
     <div class="topbar-right">
+      <div id="eway-alert-btn" style="display:none;cursor:pointer;background:var(--red-lt);border:1px solid #ffcecb;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--red)" onclick="navigate('eway-alerts')">
+        ⚠ E-Way Expiry <span id="eway-alert-count">0</span>
+      </div>
       <div class="user-chip">
         <div class="user-avatar" id="topbar-avatar">AD</div>
         <span class="user-name" id="topbar-username">Admin</span>
       </div>
+      <button class="btn btn-outline btn-sm" onclick="navigate('shortcuts')" style="font-size:11px" title="Keyboard Shortcuts">?</button>
       <button class="btn btn-outline btn-sm" onclick="initSystem()" style="font-size:11px">⚡ Init</button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()" style="font-size:11px;color:var(--red);border-color:#ffcecb">&#x2318; Logout</button>
     </div>
@@ -816,7 +842,7 @@ function navigate(page) {
   state.page = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.nav-item');
-  const map = {dashboard:0,sales:1,operations:2,dispatch:3,mf:4,unloading:5,profit:6,account:7,report:8,masters:9,import:10,usermgmt:11};
+  const map = {dashboard:0,sales:1,operations:2,dispatch:3,mf:4,unloading:5,profit:6,account:7,pipeline:8,'eway-alerts':9,report:10,'party-ledger':11,'monthly-pl':12,'broker-outstanding':13,masters:14,import:15,usermgmt:16};
   if (items[map[page]]) items[map[page]].classList.add('active');
   const titles = {
     dashboard:'Dashboard',
@@ -827,10 +853,16 @@ function navigate(page) {
     unloading:'Unloading',
     profit:'Profit Analysis',
     account:'Account Payment',
+    pipeline:'Trip Pipeline Tracker',
+    'eway-alerts':'E-Way Bill Alerts',
     report:'Master Report',
+    'party-ledger':'Party Ledger',
+    'monthly-pl':'Monthly P&L Summary',
+    'broker-outstanding':'Broker Outstanding',
     masters:'Master Data',
     import:'Import Data',
-    usermgmt:'User Management'
+    usermgmt:'User Management',
+    shortcuts:'Keyboard Shortcuts'
   };
   document.getElementById('page-title').textContent = titles[page] || page;
   renderPage(page);
@@ -838,18 +870,24 @@ function navigate(page) {
 
 function renderPage(page) {
   const pages = {
-    dashboard:  renderDashboard,
-    sales:      renderSales,
-    operations: renderOperations,
-    dispatch:   renderDispatch,
-    mf:         renderMF,
-    unloading:  renderUnloading,
-    profit:     renderProfit,
-    account:    renderAccount,
-    report:     renderReport,
-    masters:    renderMasters,
-    import:     renderImport,
-    usermgmt:   renderUserMgmt
+    dashboard:           renderDashboard,
+    sales:               renderSales,
+    operations:          renderOperations,
+    dispatch:            renderDispatch,
+    mf:                  renderMF,
+    unloading:           renderUnloading,
+    profit:              renderProfit,
+    account:             renderAccount,
+    pipeline:            renderPipeline,
+    'eway-alerts':       renderEwayAlerts,
+    report:              renderReport,
+    'party-ledger':      renderPartyLedger,
+    'monthly-pl':        renderMonthlyPL,
+    'broker-outstanding':renderBrokerOutstanding,
+    masters:             renderMasters,
+    import:              renderImport,
+    usermgmt:            renderUserMgmt,
+    shortcuts:           renderShortcuts
   };
   const fn = pages[page];
   if (!fn) return;
@@ -1010,12 +1048,34 @@ const SB = {
       if (filters.Profit_Status !== undefined)   query += '&profit_status=eq.' + (filters.Profit_Status==='true'||filters.Profit_Status===true?'true':'false');
     }
     // Get total count
-    const countRes = await fetch( + '/rest/v1/so_master' + (query.split('&limit=')[0] || '?') + '&select=count', {
+    const countRes = await fetch(SUPABASE_URL + '/rest/v1/so_master' + (query.split('&limit=')[0] || '?') + '&select=count', {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
     });
     const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
     const rows = await sb('so_master', 'GET', null, query);
     return { data: rows.map(r => ({ ...r, SO_ID: r.id, SO_Number: r.so_number, Party_ID: r.party_id, From_ID: r.from_id, To_ID: r.to_id, MT: r.mt, Rate_Given: r.rate_given, Rate_Received: r.rate_received, Total_Margin: r.total_margin, Converted: r.converted, Status: r.status, Remarks: r.remarks, Allocated: r.allocated, Documentation_Status: r.documentation_status, MF_Status: r.mf_status, Unloading_Status: r.unloading_status, Profit_Status: r.profit_status, Created_At: r.created_at })), total, page };
+  },
+  // Fetches ALL matching SOs for dropdown — no page limit, no crash risk
+  // because we only select the 4 fields the dropdowns actually need.
+  async getAllSOsForDropdown(filters) {
+    let query = '?order=so_number.desc&select=id,so_number,party_id,from_id,to_id,unloading_status';
+    if (filters) {
+      if (filters.Converted)                          query += '&converted=eq.' + filters.Converted;
+      if (filters.Allocated !== undefined)            query += '&allocated=eq.' + (filters.Allocated==='true'||filters.Allocated===true?'true':'false');
+      if (filters.Documentation_Status !== undefined) query += '&documentation_status=eq.' + (filters.Documentation_Status==='true'||filters.Documentation_Status===true?'true':'false');
+      if (filters.MF_Status !== undefined)            query += '&mf_status=eq.' + (filters.MF_Status==='true'||filters.MF_Status===true?'true':'false');
+      if (filters.Unloading_Status !== undefined)     query += '&unloading_status=eq.' + (filters.Unloading_Status==='true'||filters.Unloading_Status===true?'true':'false');
+      if (filters.Profit_Status !== undefined)        query += '&profit_status=eq.' + (filters.Profit_Status==='true'||filters.Profit_Status===true?'true':'false');
+    }
+    const rows = await sb('so_master', 'GET', null, query);
+    return rows.map(r => ({
+      SO_ID:             r.id,
+      SO_Number:         r.so_number,
+      Party_ID:          r.party_id,
+      From_ID:           r.from_id,
+      To_ID:             r.to_id,
+      Unloading_Status:  r.unloading_status
+    }));
   },
   async saveSOData(d) {
     const mt = parseFloat(d.MT)||0, pr = parseFloat(d.Rate_Given)||0, lr = parseFloat(d.Rate_Received)||0, lc = parseFloat(d.Loading_Charge)||0;
@@ -1061,8 +1121,12 @@ const SB = {
   },
   async getTripData(page) {
     page = page || 1;
+    const countRes = await fetch(SUPABASE_URL + '/rest/v1/trip_dispatch_master?select=count', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
+    });
+    const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
     const rows = await sb('trip_dispatch_master', 'GET', null, '?order=id.desc&limit=50&offset='+((page-1)*50));
-    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Trip_Status: r.trip_status })), total: rows.length, page };
+    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Trip_Status: r.trip_status })), total, page };
   },
   async saveDispatchData(d) {
     const updates = { loading_date: d.Loading_Date, gc_no: d.GC_No, invoice_no: d.Invoice_No, eway_bill_no: d.Eway_Bill_No, eway_expiry: d.Eway_Expiry, destination_gc: d.Destination_GC, items: d.Items, pkgs: d.PKGS, articles: d.Articles, final_mt: d.Final_MT, dispatch_status: 'DISPATCHED' };
@@ -1077,8 +1141,12 @@ const SB = {
   },
   async getDispatchData(page) {
     page = page || 1;
+    const countRes = await fetch(SUPABASE_URL + '/rest/v1/trip_dispatch_master?dispatch_status=eq.DISPATCHED&select=count', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
+    });
+    const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
     const rows = await sb('trip_dispatch_master', 'GET', null, '?dispatch_status=eq.DISPATCHED&order=id.desc&limit=50&offset='+((page-1)*50));
-    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, GC_No: r.gc_no, Eway_Bill_No: r.eway_bill_no, Final_MT: r.final_mt, PKGS: r.pkgs, Items: r.items })), total: rows.length, page };
+    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, GC_No: r.gc_no, Eway_Bill_No: r.eway_bill_no, Final_MT: r.final_mt, PKGS: r.pkgs, Items: r.items })), total, page };
   },
 
   // ── MF ──
@@ -1099,8 +1167,12 @@ const SB = {
   },
   async getMFData(page) {
     page = page || 1;
+    const countRes = await fetch(SUPABASE_URL + '/rest/v1/mf_master?select=count', {
+      headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
+    });
+    const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
     const rows = await sb('mf_master', 'GET', null, '?order=id.desc&limit=50&offset='+((page-1)*50));
-    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Total_Freight: r.total_freight, Total_Cost: r.total_cost, Bilti_Freight: r.bilti_freight })), total: rows.length, page };
+    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Total_Freight: r.total_freight, Total_Cost: r.total_cost, Bilti_Freight: r.bilti_freight })), total, page };
   },
   async getMFBySO(soId) {
     const rows = await sb('mf_master', 'GET', null, '?so_id=eq.' + soId + '&limit=1');
@@ -1302,7 +1374,209 @@ const SB = {
   async importPlaceData(records)  { let ins=0,sk=0,err=[]; for(const r of records){ try{ await sb('place_master','POST',{place_name:r.Place_Name,state_code:r.State_Code||''}); ins++; } catch(e){ err.push(e.message); } } return {inserted:ins,skipped:sk,errors:err}; },
   async importBrokerData(records) { let ins=0,sk=0,err=[]; for(const r of records){ try{ await sb('broker_master','POST',{broker_name:r.Broker_Name,primary_acc_no:r.Primary_Acc_No||'',ifsc:r.IFSC||'',secondary_acc_no:r.Secondary_Acc_No||'',secondary_ifsc:r.Secondary_IFSC||'',contact_no:r.Contact_No||'',status:r.Status||'ACTIVE'}); ins++; } catch(e){ err.push(e.message); } } return {inserted:ins,skipped:sk,errors:err}; },
   async importSOData(records) { return { inserted: 0, skipped: 0, errors: ['Use the SO Entry form to add records.'] }; },
-  async initializeSystem() { return { success: true }; }
+  async initializeSystem() { return { success: true }; },
+
+  // ── PIPELINE ──
+  async getPipelineData() {
+    const [soRows, tdRows, mfRows, ulRows, pfRows] = await Promise.all([
+      sb('so_master',           'GET', null, '?converted=eq.YES&order=id.desc&limit=500&select=id,so_number,party_id,from_id,to_id,allocated,documentation_status,mf_status,unloading_status,profit_status,created_at'),
+      sb('trip_dispatch_master','GET', null, '?select=so_id,lorry_no,trip_status,eway_expiry,loading_date'),
+      sb('mf_master',           'GET', null, '?select=so_id,mf_no'),
+      sb('unloading_master',    'GET', null, '?select=so_id,unloading_date'),
+      sb('profit_master',       'GET', null, '?select=so_id,gross_profit')
+    ]);
+    const tdMap={}, mfMap={}, ulMap={}, pfMap={};
+    tdRows.forEach(r => { tdMap[String(r.so_id)] = r; });
+    mfRows.forEach(r => { mfMap[String(r.so_id)] = r; });
+    ulRows.forEach(r => { ulMap[String(r.so_id)] = r; });
+    pfRows.forEach(r => { pfMap[String(r.so_id)] = r; });
+    return soRows.map(so => {
+      const sid = String(so.id);
+      const td = tdMap[sid]||{}, mf = mfMap[sid]||{}, pf = pfMap[sid]||{};
+      return {
+        SO_ID: so.id, SO_Number: so.so_number||'', Party_ID: so.party_id,
+        From_ID: so.from_id, To_ID: so.to_id,
+        Lorry_No: td.lorry_no||'', Trip_Status: td.trip_status||'',
+        MF_No: mf.mf_no||'',
+        Gross_Profit: pf.gross_profit||0,
+        Loading_Date: td.loading_date||'',
+        Eway_Expiry: td.eway_expiry||'',
+        s1_so:        true,
+        s2_ops:       !!so.allocated,
+        s3_dispatch:  !!so.documentation_status,
+        s4_mf:        !!so.mf_status,
+        s5_unloading: !!so.unloading_status,
+        s6_profit:    !!so.profit_status
+      };
+    });
+  },
+
+  // ── E-WAY ALERTS ──
+  async getEwayAlerts() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const threeDays = new Date(today); threeDays.setDate(today.getDate()+3);
+    const rows = await sb('trip_dispatch_master','GET',null,'?eway_expiry=not.is.null&trip_status=eq.RUNNING&order=eway_expiry.asc&select=so_id,so_number,lorry_no,gc_no,eway_bill_no,eway_expiry,broker_contact,driver_contact');
+    return rows.map(r => {
+      const exp = r.eway_expiry ? new Date(r.eway_expiry) : null;
+      let group = 'ok';
+      if (exp) {
+        exp.setHours(0,0,0,0);
+        const diff = Math.round((exp-today)/(1000*60*60*24));
+        if (diff < 0)  group = 'expired';
+        else if (diff === 0) group = 'today';
+        else if (diff <= 2)  group = 'soon';
+        else group = 'ok';
+      }
+      return { ...r, SO_Number: r.so_number||'', Lorry_No: r.lorry_no||'', GC_No: r.gc_no||'', Eway_Bill_No: r.eway_bill_no||'', group };
+    }).filter(r => r.group !== 'ok');
+  },
+
+  // ── PARTY LEDGER ──
+  async getPartyLedger(partyId) {
+    // Build SO query — if partyId given filter by party, else fetch all (no converted filter so ALL SOs show)
+    let soQ = '?order=id.desc&limit=2000';
+    if (partyId) soQ += '&party_id=eq.' + partyId;
+    soQ += '&select=id,so_number,party_id,from_id,to_id,mt,converted,allocated,documentation_status,mf_status,unloading_status,profit_status,created_at';
+    const soRows = await sb('so_master','GET',null, soQ);
+    if (!soRows || !soRows.length) return [];
+
+    // Get all SO ids for this party to filter mf/profit efficiently
+    const soIds = soRows.map(r => r.id);
+    // Supabase: filter by list of IDs using in=(1,2,3)
+    const idList = soIds.join(',');
+    const [mfRows, pfRows] = await Promise.all([
+      sb('mf_master','GET',null,'?so_id=in.('+idList+')&select=so_id,mf_no,total_cost,bilti_freight,final_mt'),
+      sb('profit_master','GET',null,'?so_id=in.('+idList+')&select=so_id,gross_profit,total_revenue,gp_on_sale')
+    ]);
+    const mfMap={}, pfMap={};
+    mfRows.forEach(r => { mfMap[String(r.so_id)] = r; });
+    pfRows.forEach(r => { pfMap[String(r.so_id)] = r; });
+    return soRows.map(so => {
+      const sid=String(so.id), mf=mfMap[sid]||{}, pf=pfMap[sid]||{};
+      return { SO_Number: so.so_number||'', Party_ID: so.party_id, From_ID: so.from_id, To_ID: so.to_id,
+        Converted: so.converted||'PENDING',
+        MT: parseFloat(so.mt)||0, Final_MT: parseFloat(mf.final_mt)||0,
+        MF_No: mf.mf_no||'',
+        Bilti_Freight: parseFloat(mf.bilti_freight)||0, Total_Cost: parseFloat(mf.total_cost)||0,
+        Gross_Profit: parseFloat(pf.gross_profit)||0, Total_Revenue: parseFloat(pf.total_revenue)||0,
+        GP_Pct: parseFloat(pf.gp_on_sale)||0,
+        Profit_Done: !!so.profit_status, Created_At: so.created_at };
+    });
+  },
+
+  // ── MONTHLY P&L ──
+  async getMonthlyPL(year) {
+    const pfRows = await sb('profit_master','GET',null,'?order=created_at.asc&select=so_id,bilti_freight,total_revenue,total_cost,gross_profit,gp_on_sale,created_at');
+    const mfRows = await sb('mf_master','GET',null,'?select=so_id,final_mt');
+    const mfMap = {}; mfRows.forEach(r => { mfMap[String(r.so_id)] = r; });
+    const months = {};
+    pfRows.forEach(r => {
+      if (!r.created_at) return;
+      const d = new Date(r.created_at);
+      if (year && d.getFullYear() !== parseInt(year)) return;
+      const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+      const label = d.toLocaleDateString('en-IN',{month:'short',year:'numeric'});
+      if (!months[key]) months[key] = { key, label, trips:0, mt:0, revenue:0, cost:0, profit:0 };
+      const mf = mfMap[String(r.so_id)]||{};
+      months[key].trips++;
+      months[key].mt     += parseFloat(mf.final_mt)||0;
+      months[key].revenue+= parseFloat(r.bilti_freight)||0;
+      months[key].cost   += parseFloat(r.total_cost)||0;
+      months[key].profit += parseFloat(r.gross_profit)||0;
+    });
+    return Object.values(months).sort((a,b) => a.key.localeCompare(b.key));
+  },
+
+  // ── BROKER OUTSTANDING ──
+  // Correct join: broker lives in trip_dispatch_master (broker_id, broker_acc, broker_ifsc, bal_acc, bal_ifsc)
+  // mf_master links to trip via so_id. account_master links via mf_no.
+  async getBrokerOutstanding(filterBrokerId) {
+    const [mfRows, tdRows, acctRows, brokerRows] = await Promise.all([
+      sb('mf_master',           'GET', null, '?order=id.desc&select=so_id,so_number,mf_no,lorry_no,advance,balance,freight_mf'),
+      sb('trip_dispatch_master','GET', null, '?select=so_id,broker_id,broker_acc,broker_ifsc,bal_acc,bal_ifsc,broker_contact'),
+      sb('account_master',      'GET', null, '?select=mf_no,adv_acc_no,adv_ifsc,bal_acc_no,bal_ifsc,advance_amount,balance_amount,adv_paid_amount,bal_paid_amount,overall_status,adv_txn_id,bal_txn_id'),
+      sb('broker_master',       'GET', null, '?select=id,broker_name,primary_acc_no,ifsc,secondary_acc_no,secondary_ifsc,contact_no')
+    ]);
+
+    // Build lookup maps
+    const brokerMap = {}; brokerRows.forEach(b  => { brokerMap[String(b.id)]       = b; });
+    const tdMap     = {}; tdRows.forEach(td      => { tdMap[String(td.so_id)]      = td; });
+    const acctMap   = {}; acctRows.forEach(a     => { acctMap[String(a.mf_no)]     = a; });
+
+    const grouped = {};
+    mfRows.forEach(mf => {
+      const td   = tdMap[String(mf.so_id)] || {};
+      const bId  = String(td.broker_id || '');
+      if (!bId || bId === 'null' || bId === '') return;
+
+      const b    = brokerMap[bId] || {};
+      const acct = acctMap[String(mf.mf_no || '')] || null;
+
+      // Skip trips fully settled
+      if (acct && acct.overall_status === 'COMPLETED') return;
+
+      if (!grouped[bId]) {
+        grouped[bId] = {
+          Broker_ID:   bId,
+          Broker_Name: b.broker_name || 'Unknown',
+          Acc_No:      b.primary_acc_no   || td.broker_acc  || '',
+          IFSC:        b.ifsc             || td.broker_ifsc || '',
+          Bal_Acc:     b.secondary_acc_no || td.bal_acc     || b.primary_acc_no   || '',
+          Bal_IFSC:    b.secondary_ifsc   || td.bal_ifsc    || b.ifsc             || '',
+          Contact:     b.contact_no || td.broker_contact || '',
+          trips: [], pending_adv: 0, pending_bal: 0, total_outstanding: 0
+        };
+      }
+
+      // Amount owed — if account record exists use its amounts, else use raw MF amounts
+      const advOwed = acct
+        ? Math.max(0, (parseFloat(acct.advance_amount)||0) - (parseFloat(acct.adv_paid_amount)||0))
+        : Math.max(0, parseFloat(mf.advance)||0);
+      const balOwed = acct
+        ? Math.max(0, (parseFloat(acct.balance_amount)||0) - (parseFloat(acct.bal_paid_amount)||0))
+        : Math.max(0, parseFloat(mf.balance)||0);
+
+      grouped[bId].pending_adv       += advOwed;
+      grouped[bId].pending_bal       += balOwed;
+      grouped[bId].total_outstanding += advOwed + balOwed;
+      grouped[bId].trips.push({
+        MF_No:      mf.mf_no      || '',
+        SO_Number:  mf.so_number  || '',
+        Lorry_No:   mf.lorry_no   || '',
+        Adv_Owed:   advOwed,
+        Bal_Owed:   balOwed,
+        Adv_Acc:    acct ? (acct.adv_acc_no || b.primary_acc_no || td.broker_acc || '')                          : (b.primary_acc_no || td.broker_acc || ''),
+        Adv_IFSC:   acct ? (acct.adv_ifsc   || b.ifsc || td.broker_ifsc || '')                                   : (b.ifsc || td.broker_ifsc || ''),
+        Bal_Acc:    acct ? (acct.bal_acc_no  || b.secondary_acc_no || td.bal_acc || b.primary_acc_no || '')       : (b.secondary_acc_no || td.bal_acc || b.primary_acc_no || ''),
+        Bal_IFSC:   acct ? (acct.bal_ifsc    || b.secondary_ifsc || td.bal_ifsc || b.ifsc || '')                  : (b.secondary_ifsc || td.bal_ifsc || b.ifsc || ''),
+        Adv_TxnID:  acct ? (acct.adv_txn_id || '') : '',
+        Bal_TxnID:  acct ? (acct.bal_txn_id || '') : '',
+        Status:     acct ? acct.overall_status : 'NOT_PAID',
+        Freight_MF: parseFloat(mf.freight_mf) || 0
+      });
+    });
+
+    let result = Object.values(grouped).filter(b => b.total_outstanding > 0);
+    if (filterBrokerId) result = result.filter(b => String(b.Broker_ID) === String(filterBrokerId));
+    return result.sort((a, b) => b.total_outstanding - a.total_outstanding);
+  },
+
+  // ── GLOBAL SEARCH ──
+  async globalSearch(q) {
+    if (!q || q.length < 2) return [];
+    const enc = encodeURIComponent(q);
+    const [soRows, mfRows, tdRows] = await Promise.all([
+      sb('so_master','GET',null,'?or=(so_number.ilike.*'+enc+'*)&limit=8&select=id,so_number,party_id,converted,profit_status,mf_status,unloading_status,documentation_status,allocated'),
+      sb('mf_master','GET',null,'?or=(mf_no.ilike.*'+enc+'*,lorry_no.ilike.*'+enc+'*)&limit=8&select=so_id,mf_no,lorry_no,so_number'),
+      sb('trip_dispatch_master','GET',null,'?or=(lorry_no.ilike.*'+enc+'*)&limit=8&select=so_id,so_number,lorry_no,trip_status')
+    ]);
+    const results = [];
+    soRows.forEach(r => results.push({ label: r.so_number||'?', sub: 'SO', icon:'◈', module:'sales', soId: r.id,
+      stage: r.profit_status?'Profit Done':r.unloading_status?'Unloaded':r.mf_status?'MF Done':r.documentation_status?'Dispatched':r.allocated?'Trip Active':'SO Only' }));
+    mfRows.forEach(r => { if(!results.find(x=>x.label===r.so_number)) results.push({ label: r.mf_no||'?', sub: r.so_number||'', icon:'◉', module:'mf', soId: r.so_id, stage: 'MF Record' }); });
+    tdRows.forEach(r => { if(!results.find(x=>x.sub===r.lorry_no)) results.push({ label: r.lorry_no||'?', sub: r.so_number||'', icon:'▷', module:'operations', soId: r.so_id, stage: r.trip_status||'' }); });
+    return results.slice(0,12);
+  }
 };
 
 // ── call() — unified API entry point (uses SB for Supabase) ─
@@ -1945,8 +2219,7 @@ async function saveSOEdit() {
 // =============================================
 async function renderOperations() {
   await loadMasters();
-  const soResult = await call('getSOData', 1, {Converted:'YES', Allocated:'false'});
-  const sos = (soResult && soResult.data) ? soResult.data : [];
+  const sos = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'false'});
 
   setContent(`
     <div class="section-card">
@@ -2153,8 +2426,7 @@ async function loadTripTable(page) {
 // =============================================
 async function renderDispatch() {
   await loadMasters();
-  const soResult = await call('getSOData', 1, {Converted:'YES', Allocated:'true', Documentation_Status:'false'});
-  const sos = (soResult && soResult.data) ? soResult.data : [];
+  const sos = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', Documentation_Status:'false'});
 
   setContent(`
     <div class="section-card">
@@ -2387,8 +2659,7 @@ async function loadDispatchTable(page) {
 // =============================================
 async function renderMF() {
   await loadMasters();
-  const soResult = await call('getSOData', 1, {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'false'});
-  const sos = (soResult && soResult.data) ? soResult.data : [];
+  const sos = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'false'});
 
   setContent(`
     <div class="section-card">
@@ -2644,8 +2915,7 @@ async function loadMFTable(page) {
 // =============================================
 async function renderUnloading() {
   await loadMasters();
-  const soResult = await call('getSOData', 1, {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'true', Unloading_Status:'false'});
-  const sos = (soResult && soResult.data) ? soResult.data : [];
+  const sos = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'true', Unloading_Status:'false'});
 
   setContent(`
     <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start">
@@ -2711,8 +2981,7 @@ async function loadUnloadingTracking() {
   wrap.innerHTML = '<div class="loading"><span class="spinner"></span>Loading…</div>';
   try {
     // Get all SOs that have been through MF (dispatched)
-    const soResult = await call('getSOData', 1, {Converted:'YES', Allocated:'true', MF_Status:'true'});
-    const allSOs = (soResult && soResult.data) ? soResult.data : [];
+    const allSOs = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', MF_Status:'true'});
 
     _ulAllRows = allSOs.map(s => ({
       SO_Number:    s.SO_Number || '–',
@@ -2728,11 +2997,18 @@ async function loadUnloadingTracking() {
   }
 }
 
-function renderUnloadingTable(rows) {
+// _ulFilteredRows holds the currently-filtered dataset (used by pagination)
+let _ulFilteredRows = null;
+
+function renderUnloadingTable(rows, page) {
+  if (rows !== undefined && rows !== null) _ulFilteredRows = rows;
+  const data = _ulFilteredRows || _ulAllRows || [];
+  if (page !== undefined) _ulPage = page;
+
   const wrap = document.getElementById('ul-tracking-wrap');
   if (!wrap) return;
 
-  if (!rows || rows.length === 0) {
+  if (!data || data.length === 0) {
     wrap.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink3)">
       <div style="font-size:32px;margin-bottom:12px">🏗️</div>
       <div style="font-weight:700">No dispatched trips found</div>
@@ -2741,7 +3017,15 @@ function renderUnloadingTable(rows) {
     return;
   }
 
-  const tableRows = rows.map(r => {
+  const totalPages = Math.max(1, Math.ceil(data.length / _UL_PAGE_SIZE));
+  _ulPage = Math.min(_ulPage, totalPages);
+  const startIdx  = (_ulPage - 1) * _UL_PAGE_SIZE;
+  const pageData  = data.slice(startIdx, startIdx + _UL_PAGE_SIZE);
+
+  const doneCount    = data.filter(r => r.Done).length;
+  const pendingCount = data.filter(r => !r.Done).length;
+
+  const tableRows = pageData.map(r => {
     const statusPill = r.Done
       ? `<span class="status-pill sp-completed">✅ Unloaded</span>`
       : `<span class="status-pill sp-pending">⏳ Pending</span>`;
@@ -2757,13 +3041,16 @@ function renderUnloadingTable(rows) {
     </tr>`;
   }).join('');
 
-  const doneCount    = rows.filter(r => r.Done).length;
-  const pendingCount = rows.filter(r => !r.Done).length;
+  const countInfo = data.length > _UL_PAGE_SIZE
+    ? `<span style="font-size:11px;color:var(--ink3);margin-left:12px">Showing ${startIdx+1}–${Math.min(startIdx+_UL_PAGE_SIZE,data.length)} of ${data.length}</span>`
+    : '';
+  const paginationHtml = renderPagination(_ulPage, totalPages, 'renderUnloadingTable');
 
   wrap.innerHTML = `
-    <div style="display:flex;gap:12px;margin-bottom:14px">
+    <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:var(--green)">✅ Unloaded: ${doneCount}</div>
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:var(--blue)">⏳ Pending: ${pendingCount}</div>
+      ${countInfo}
     </div>
     <div class="table-wrap">
       <table>
@@ -2776,7 +3063,7 @@ function renderUnloadingTable(rows) {
         </tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
-    </div>`;
+    </div>${paginationHtml}`;
 }
 
 function filterUnloadingList() {
@@ -2787,6 +3074,7 @@ function filterUnloadingList() {
     const matchStatus = status === 'all' || (status === 'done' && r.Done) || (status === 'pending' && !r.Done);
     return matchSearch && matchStatus;
   });
+  _ulPage = 1; // reset to page 1 when filter changes
   renderUnloadingTable(filtered);
 }
 
@@ -2896,11 +3184,10 @@ async function renderProfit() {
   await loadMasters();
 
   // Load both: SOs ready for profit entry AND all dispatch records for the summary
-  const [soResult, dispResult] = await Promise.all([
-    call('getSOData', 1, {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'true', Unloading_Status:'true', Profit_Status:'false'}),
+  const [sos, dispResult] = await Promise.all([
+    call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', Documentation_Status:'true', MF_Status:'true', Unloading_Status:'true', Profit_Status:'false'}),
     call('getDispatchData', 1)
   ]);
-  const sos      = (soResult  && soResult.data)  ? soResult.data  : [];
   const dispRows = (dispResult && dispResult.data) ? dispResult.data : [];
 
   // Build dispatch summary table rows
@@ -3436,13 +3723,34 @@ async function renderMasters() {
 function switchMasterTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
+  _masterPage[tab] = 1; // reset to page 1 on tab switch
   renderMasterTab(tab);
 }
 
-function renderMasterTab(tab) {
+function renderMasterTab(tab, page) {
+  if (page !== undefined) _masterPage[tab] = page;
   const container = document.getElementById('master-content');
+  if (!container) return;
+
+  function paginate(data, tabKey) {
+    const pg = _masterPage[tabKey] || 1;
+    const total = data.length;
+    const totalPages = Math.max(1, Math.ceil(total / _MASTER_PAGE_SIZE));
+    const clampedPg = Math.min(pg, totalPages);
+    _masterPage[tabKey] = clampedPg;
+    const start = (clampedPg - 1) * _MASTER_PAGE_SIZE;
+    return {
+      items: data.slice(start, start + _MASTER_PAGE_SIZE),
+      pager: renderPagination(clampedPg, totalPages, `function(p){renderMasterTab('${tabKey}',p)}`),
+      countInfo: total > _MASTER_PAGE_SIZE
+        ? `<div style="font-size:11px;color:var(--ink3);margin-top:8px">Showing <b>${start+1}–${Math.min(start+_MASTER_PAGE_SIZE,total)}</b> of <b>${total}</b> records</div>`
+        : ''
+    };
+  }
+
   if (tab==='party') {
-    const rows = state.parties.map(p => `<tr><td>${p.Party_ID}</td><td>${p.Party_Name}</td><td>${p.Contact}</td><td>${p.GST}</td><td><span class="badge b-yes">${p.Status}</span></td></tr>`).join('');
+    const { items, pager, countInfo } = paginate(state.parties, 'party');
+    const rows = items.map(p => `<tr><td>${p.Party_ID}</td><td>${p.Party_Name}</td><td>${p.Contact||'–'}</td><td>${p.GST||'–'}</td><td><span class="badge b-yes">${p.Status}</span></td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Party Name *</label><input type="text" id="m-party-name"></div>
@@ -3453,10 +3761,13 @@ function renderMasterTab(tab) {
       <div class="form-actions" style="margin-top:0;border-top:none">
         <button class="btn btn-primary btn-sm" onclick="addParty()">+ Add Party</button>
       </div>
+      ${countInfo}
       <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>GST</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="loading">No records</td></tr>'}</tbody></table></div>
+      ${pager}
     `;
   } else if (tab==='place') {
-    const rows = state.places.map(p => `<tr><td>${p.Place_ID}</td><td>${p.Place_Name}</td><td>${p.State_Code}</td></tr>`).join('');
+    const { items, pager, countInfo } = paginate(state.places, 'place');
+    const rows = items.map(p => `<tr><td>${p.Place_ID}</td><td>${p.Place_Name}</td><td>${p.State_Code||'–'}</td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Place Name *</label><input type="text" id="m-place-name"></div>
@@ -3465,10 +3776,13 @@ function renderMasterTab(tab) {
       <div class="form-actions" style="margin-top:0;border-top:none">
         <button class="btn btn-primary btn-sm" onclick="addPlace()">+ Add Place</button>
       </div>
+      ${countInfo}
       <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Place Name</th><th>State Code</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="loading">No records</td></tr>'}</tbody></table></div>
+      ${pager}
     `;
   } else if (tab==='broker') {
-    const rows = state.brokers.map(b => `<tr><td>${b.Broker_ID}</td><td>${b.Broker_Name}</td><td>${b.Contact_No}</td><td class="mono">${b.Primary_Acc_No}</td><td class="mono">${b.IFSC}</td><td><span class="badge b-yes">${b.Status}</span></td></tr>`).join('');
+    const { items, pager, countInfo } = paginate(state.brokers, 'broker');
+    const rows = items.map(b => `<tr><td>${b.Broker_ID}</td><td>${b.Broker_Name}</td><td>${b.Contact_No||'–'}</td><td class="mono">${b.Primary_Acc_No||'–'}</td><td class="mono">${b.IFSC||'–'}</td><td><span class="badge b-yes">${b.Status}</span></td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Broker Name *</label><input type="text" id="m-broker-name"></div>
@@ -3482,7 +3796,9 @@ function renderMasterTab(tab) {
       <div class="form-actions" style="margin-top:0;border-top:none">
         <button class="btn btn-primary btn-sm" onclick="addBroker()">+ Add Broker</button>
       </div>
+      ${countInfo}
       <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Acc No</th><th>IFSC</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="loading">No records</td></tr>'}</tbody></table></div>
+      ${pager}
     `;
   }
 }
@@ -3492,7 +3808,7 @@ async function addParty() {
   if (!name) { toast('Party name required','error'); return; }
   try {
     const r = await call('saveParty', {Party_Name:name, Contact:document.getElementById('m-party-contact').value, GST:document.getElementById('m-party-gst').value, Status:document.getElementById('m-party-status').value});
-    if (r.success) { toast('Party added!'); await loadMasters(true); renderMasterTab('party'); }
+    if (r.success) { toast('Party added!'); await loadMasters(true); _masterPage['party'] = 1; renderMasterTab('party'); }
   } catch(e) { toast('Failed: '+e,'error'); }
 }
 
@@ -3501,7 +3817,7 @@ async function addPlace() {
   if (!name) { toast('Place name required','error'); return; }
   try {
     const r = await call('savePlace', {Place_Name:name, State_Code:document.getElementById('m-place-state').value});
-    if (r.success) { toast('Place added!'); await loadMasters(true); renderMasterTab('place'); }
+    if (r.success) { toast('Place added!'); await loadMasters(true); _masterPage['place'] = 1; renderMasterTab('place'); }
   } catch(e) { toast('Failed: '+e,'error'); }
 }
 
@@ -3510,7 +3826,7 @@ async function addBroker() {
   if (!name) { toast('Broker name required','error'); return; }
   try {
     const r = await call('saveBroker', {Broker_Name:name, Contact_No:document.getElementById('m-broker-contact').value, Primary_Acc_No:document.getElementById('m-broker-acc').value, IFSC:document.getElementById('m-broker-ifsc').value, Secondary_Acc_No:document.getElementById('m-broker-acc2').value, Secondary_IFSC:document.getElementById('m-broker-ifsc2').value, Status:document.getElementById('m-broker-status').value});
-    if (r.success) { toast('Broker added!'); await loadMasters(true); renderMasterTab('broker'); }
+    if (r.success) { toast('Broker added!'); await loadMasters(true); _masterPage['broker'] = 1; renderMasterTab('broker'); }
   } catch(e) { toast('Failed: '+e,'error'); }
 }
 
@@ -3526,11 +3842,28 @@ function getPlaceName(id) {
 
 function renderPagination(current, total, fn) {
   if (total <= 1) return '';
-  let btns = `<button class="page-btn" onclick="${fn}(${Math.max(1,current-1)})">‹</button>`;
-  for (let i=1;i<=Math.min(total,7);i++) {
-    btns += `<button class="page-btn ${i===current?'active':''}" onclick="${fn}(${i})">${i}</button>`;
+  const prev = Math.max(1, current - 1);
+  const next = Math.min(total, current + 1);
+  let btns = `<button class="page-btn" onclick="${fn}(${prev})" ${current===1?'disabled':''}>‹ Prev</button>`;
+  // Build page number list with ellipsis
+  const pages = [];
+  if (total <= 7) {
+    for (let i=1; i<=total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current > 4) pages.push('...');
+    for (let i=Math.max(2,current-2); i<=Math.min(total-1,current+2); i++) pages.push(i);
+    if (current < total-3) pages.push('...');
+    pages.push(total);
   }
-  btns += `<button class="page-btn" onclick="${fn}(${Math.min(total,current+1)})">›</button>`;
+  pages.forEach(p => {
+    if (p === '...') {
+      btns += `<span class="page-btn" style="cursor:default;color:var(--ink4)">…</span>`;
+    } else {
+      btns += `<button class="page-btn ${p===current?'active':''}" onclick="${fn}(${p})">${p}</button>`;
+    }
+  });
+  btns += `<button class="page-btn" onclick="${fn}(${next})" ${current===total?'disabled':''}>Next ›</button>`;
   return `<div class="pagination">${btns}<span class="page-info">Page ${current} of ${total}</span></div>`;
 }
 
@@ -3541,7 +3874,7 @@ async function initSystem() {
     const r = await sb('party_master', 'GET', null, '?limit=1');
     toast('✅ Supabase connected! Tables are ready.');
   } catch(e) {
-    toast('⚠ Supabase connection failed. Check  and SUPABASE_ANON in the code. Error: ' + e.message, 'error');
+    toast('⚠ Supabase connection failed. Check SUPABASE_URL and SUPABASE_ANON in the code. Error: ' + e.message, 'error');
   }
 }
 
@@ -3985,7 +4318,9 @@ async function updateBalanceAmt() {
   } catch(e) { toast('Error: '+e,'error'); }
 }
 
-async function loadBalanceReport() {
+async function loadBalanceReport(page) {
+  if (page !== undefined) _balPage = page;
+  else _balPage = 1; // reset to page 1 on fresh filter
   const wrap = document.getElementById('rpt-table-wrap');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><span class="spinner"></span>Loading report...</div>';
@@ -4000,41 +4335,63 @@ async function loadBalanceReport() {
       wrap.innerHTML = '<div class="loading">No records found.</div>';
       return;
     }
-    const tableRows = rows.map(r => {
-      const osClass = {'PENDING':'sp-pending','BAL_PENDING':'sp-bal-pending','COMPLETED':'sp-completed'}[String(r.Overall_Status||'').toUpperCase()] || 'sp-pending';
-      const osLabel = {'PENDING':'Pending','BAL_PENDING':'Bal Pending','COMPLETED':'Completed'}[String(r.Overall_Status||'').toUpperCase()] || 'Pending';
-      return `<tr>
-        <td class="mono" style="font-size:11px">${r.SO_Number||'–'}</td>
-        <td class="mono">${r.MF_No||'–'}</td>
-        <td class="mono">${r.Lorry_No||'–'}</td>
-        <td>${r.Broker_Name||'–'}</td>
-        <td class="mono" style="font-size:11px">${r.Adv_Acc_No||'–'}</td>
-        <td class="mono" style="font-size:11px">${r.Adv_IFSC||'–'}</td>
-        <td class="mono" style="font-size:11px">${r.Bal_Acc_No||'–'}</td>
-        <td class="mono" style="font-size:11px">${r.Bal_IFSC||'–'}</td>
-        <td class="mono text-right" style="font-weight:700;color:var(--amber)">₹${fmt(r.Advance_Amount)}</td>
-        <td class="mono text-right" style="font-weight:700;color:var(--blue)">₹${fmt(r.Balance_Amount)}</td>
-        <td><span class="status-pill ${osClass}">${osLabel}</span></td>
-        <td style="font-size:12px">${r.Settlement_Date ? fmtDate(r.Settlement_Date) : '–'}</td>
-      </tr>`;
-    }).join('');
-    wrap.innerHTML = `
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>SO No</th><th>MF No</th><th>Truck</th><th>Broker</th>
-            <th>Adv Account</th><th>Adv IFSC</th>
-            <th>Bal Account</th><th>Bal IFSC</th>
-            <th style="text-align:right">Advance (₹)</th>
-            <th style="text-align:right">Balance (₹)</th>
-            <th>Status</th><th>Settlement Date</th>
-          </tr></thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      </div>`;
+    _balData = rows;
+    renderBalanceTable(_balPage);
   } catch(e) {
     wrap.innerHTML = `<div class="loading" style="color:var(--red)">Error: ${e}</div>`;
   }
+}
+
+function renderBalanceTable(page) {
+  if (page !== undefined) _balPage = page;
+  const wrap = document.getElementById('rpt-table-wrap');
+  if (!wrap) return;
+  const rows = _balData;
+  if (!rows || rows.length === 0) {
+    wrap.innerHTML = '<div class="loading">No records found.</div>';
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(rows.length / _BAL_PAGE_SIZE));
+  _balPage = Math.min(_balPage, totalPages);
+  const startIdx = (_balPage - 1) * _BAL_PAGE_SIZE;
+  const pageRows = rows.slice(startIdx, startIdx + _BAL_PAGE_SIZE);
+
+  const tableRows = pageRows.map(r => {
+    const osClass = {'PENDING':'sp-pending','BAL_PENDING':'sp-bal-pending','COMPLETED':'sp-completed'}[String(r.Overall_Status||'').toUpperCase()] || 'sp-pending';
+    const osLabel = {'PENDING':'Pending','BAL_PENDING':'Bal Pending','COMPLETED':'Completed'}[String(r.Overall_Status||'').toUpperCase()] || 'Pending';
+    return `<tr>
+      <td class="mono" style="font-size:11px">${r.SO_Number||'–'}</td>
+      <td class="mono">${r.MF_No||'–'}</td>
+      <td class="mono">${r.Lorry_No||'–'}</td>
+      <td>${r.Broker_Name||'–'}</td>
+      <td class="mono" style="font-size:11px">${r.Adv_Acc_No||'–'}</td>
+      <td class="mono" style="font-size:11px">${r.Adv_IFSC||'–'}</td>
+      <td class="mono" style="font-size:11px">${r.Bal_Acc_No||'–'}</td>
+      <td class="mono" style="font-size:11px">${r.Bal_IFSC||'–'}</td>
+      <td class="mono text-right" style="font-weight:700;color:var(--amber)">₹${fmt(r.Advance_Amount)}</td>
+      <td class="mono text-right" style="font-weight:700;color:var(--blue)">₹${fmt(r.Balance_Amount)}</td>
+      <td><span class="status-pill ${osClass}">${osLabel}</span></td>
+      <td style="font-size:12px">${r.Settlement_Date ? fmtDate(r.Settlement_Date) : '–'}</td>
+    </tr>`;
+  }).join('');
+
+  const countInfo = `<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Showing <b>${startIdx+1}–${Math.min(startIdx+_BAL_PAGE_SIZE,rows.length)}</b> of <b>${rows.length}</b> records</div>`;
+  const paginationHtml = renderPagination(_balPage, totalPages, 'renderBalanceTable');
+
+  wrap.innerHTML = `${countInfo}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>SO No</th><th>MF No</th><th>Truck</th><th>Broker</th>
+          <th>Adv Account</th><th>Adv IFSC</th>
+          <th>Bal Account</th><th>Bal IFSC</th>
+          <th style="text-align:right">Advance (₹)</th>
+          <th style="text-align:right">Balance (₹)</th>
+          <th>Status</th><th>Settlement Date</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>${paginationHtml}`;
 }
 
 // =============================================
@@ -4273,9 +4630,24 @@ async function previewReportSummary() {
 // =============================================
 // MASTER REPORT
 // =============================================
-let _rptData    = [];
-let _rptFilters = {};
-let _rptTab     = 'freight';
+let _rptData       = [];
+let _rptFilters    = {};
+let _rptTab        = 'freight';
+let _rptPage       = 1;
+const _RPT_PAGE_SIZE = 50;
+
+// Balance report pagination
+let _balData       = [];
+let _balPage       = 1;
+const _BAL_PAGE_SIZE = 50;
+
+// Masters pagination
+let _masterPage    = { party: 1, place: 1, broker: 1 };
+const _MASTER_PAGE_SIZE = 30;
+
+// Unloading pagination
+let _ulPage        = 1;
+const _UL_PAGE_SIZE = 50;
 
 async function renderReport() {
   showLoading();
@@ -4368,6 +4740,7 @@ async function renderReport() {
 }
 
 async function applyRptFilters() {
+  _rptPage = 1;
   _rptFilters = {
     soNumber:    (document.getElementById('rf-so')         ||{}).value || '',
     lorryNo:     (document.getElementById('rf-lorry')      ||{}).value || '',
@@ -4542,7 +4915,8 @@ function getRptCols() {
   return defs[_rptTab] || defs.status;
 }
 
-function renderRptTable() {
+function renderRptTable(page) {
+  if (page !== undefined) _rptPage = page;
   const wrap = document.getElementById('rpt-table-wrap'); if (!wrap) return;
   const cols = getRptCols();
   const d    = _rptData;
@@ -4551,17 +4925,34 @@ function renderRptTable() {
     return;
   }
 
+  const totalPages = Math.max(1, Math.ceil(d.length / _RPT_PAGE_SIZE));
+  _rptPage = Math.min(_rptPage, totalPages);
+  const startIdx = (_rptPage - 1) * _RPT_PAGE_SIZE;
+  const pageData = d.slice(startIdx, startIdx + _RPT_PAGE_SIZE);
+
   // Header
   let thead = '<thead><tr>';
   cols.forEach(c => { thead += `<th${c.rt?' style="text-align:right"':''}>${c.l}</th>`; });
   thead += '</tr></thead>';
 
-  // Body + running totals
+  // Body + running totals for current page
   const totals = {};
   cols.forEach((c,i) => { if(c.money) totals[i] = 0; });
 
-  let tbody = '<tbody>';
+  // Also compute grand totals across all data
+  const grandTotals = {};
+  cols.forEach((c,i) => { if(c.money) grandTotals[i] = 0; });
   d.forEach(r => {
+    cols.forEach((c, i) => {
+      if (c.money) {
+        const raw = parseFloat(r[Object.keys(r).find(k => c.l.replace(/[^a-zA-Z]/g,'').toLowerCase() === k.replace(/[^a-zA-Z]/g,'').toLowerCase())] || 0) || 0;
+        if (!isNaN(raw)) grandTotals[i] = (grandTotals[i]||0) + raw;
+      }
+    });
+  });
+
+  let tbody = '<tbody>';
+  pageData.forEach(r => {
     tbody += '<tr>';
     cols.forEach((c, i) => {
       const raw = parseFloat(r[Object.keys(r).find(k => c.l.replace(/[^a-zA-Z]/g,'').toLowerCase() === k.replace(/[^a-zA-Z]/g,'').toLowerCase())] || 0) || 0;
@@ -4577,20 +4968,35 @@ function renderRptTable() {
   });
   tbody += '</tbody>';
 
-  // Footer totals row
-  let tfoot = '<tfoot><tr>';
+  // Footer — page totals + grand totals if multi-page
+  let tfoot = '<tfoot>';
+  if (totalPages > 1) {
+    tfoot += '<tr>';
+    cols.forEach((c, i) => {
+      if (i === 0) {
+        tfoot += `<td style="color:#f59e0b;font-weight:700;font-size:10px">PAGE (${pageData.length})</td>`;
+      } else if (c.money && totals[i] !== undefined) {
+        tfoot += `<td style="text-align:right;font-family:var(--mono);font-size:11px">₹${totals[i].toLocaleString('en-IN',{maximumFractionDigits:0})}</td>`;
+      } else { tfoot += '<td></td>'; }
+    });
+    tfoot += '</tr>';
+  }
+  tfoot += '<tr>';
   cols.forEach((c, i) => {
     if (i === 0) {
-      tfoot += `<td style="color:var(--amber2,#f59e0b);font-weight:700;font-size:11px">TOTAL (${d.length})</td>`;
-    } else if (c.money && totals[i] !== undefined) {
-      tfoot += `<td style="text-align:right;font-family:var(--mono)">₹${totals[i].toLocaleString('en-IN',{maximumFractionDigits:0})}</td>`;
-    } else {
-      tfoot += '<td></td>';
-    }
+      tfoot += `<td style="color:#f59e0b;font-weight:700;font-size:11px">TOTAL (${d.length})</td>`;
+    } else if (c.money && grandTotals[i] !== undefined) {
+      tfoot += `<td style="text-align:right;font-family:var(--mono)">₹${grandTotals[i].toLocaleString('en-IN',{maximumFractionDigits:0})}</td>`;
+    } else { tfoot += '<td></td>'; }
   });
   tfoot += '</tr></tfoot>';
 
-  wrap.innerHTML = `<div class="table-wrap"><table>${thead}${tbody}${tfoot}</table></div>`;
+  const paginationHtml = renderPagination(_rptPage, totalPages, 'renderRptTable');
+  const countInfo = totalPages > 1
+    ? `<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Showing <b>${startIdx+1}–${Math.min(startIdx+_RPT_PAGE_SIZE,d.length)}</b> of <b>${d.length}</b> records</div>`
+    : '';
+
+  wrap.innerHTML = `${countInfo}<div class="table-wrap"><table>${thead}${tbody}${tfoot}</table></div>${paginationHtml}`;
 }
 
 function exportRptCSV() {
@@ -4824,12 +5230,17 @@ async function saveUser() {
 }
 
 async function deleteUser(id, username) {
-  if (!confirm('Delete user "'+username+'"? This cannot be undone.')) return;
-  try {
-    await SB.deleteUser(id);
-    toast('User deleted ✓');
-    await renderUserMgmt();
-  } catch(e) { toast('Failed: '+e.message,'error'); }
+  confirmDelete(
+    'Delete User "'+username+'"',
+    'This will permanently remove this user account. They will no longer be able to log in.',
+    async function() {
+      try {
+        await SB.deleteUser(id);
+        toast('User deleted ✓');
+        await renderUserMgmt();
+      } catch(e) { toast('Failed: '+e.message,'error'); }
+    }
+  );
 }
 
 function _umEdit(idx) {
@@ -4841,6 +5252,681 @@ async function _umDel(idx) {
   var u = window._umUsers[idx];
   if (!u) return;
   await deleteUser(u.id, u.username);
+}
+
+
+// =============================================
+// GLOBAL SEARCH
+// =============================================
+let _searchTimer = null;
+let _searchDrop  = false;
+
+function showSearchDrop() { _searchDrop = true; }
+function hideSearchDrop() { setTimeout(()=>{ if(!_searchDrop) return; _searchDrop=false; const d=document.getElementById('global-search-drop'); if(d) d.style.display='none'; }, 200); }
+
+function onSearchKey(e) {
+  if (e.key === 'Escape') { document.getElementById('global-search-input').blur(); document.getElementById('global-search-drop').style.display='none'; }
+}
+
+async function runGlobalSearch(q) {
+  const drop = document.getElementById('global-search-drop');
+  if (!drop) return;
+  if (!q || q.length < 2) { drop.style.display='none'; return; }
+  drop.style.display='block';
+  drop.innerHTML='<div style="padding:8px 12px;font-size:11px;color:var(--ink4)">Searching…</div>';
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(async () => {
+    try {
+      const results = await call('globalSearch', q);
+      if (!results || results.length === 0) {
+        drop.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--ink3)">No results found</div>';
+        return;
+      }
+      const moduleColors = { sales:'var(--blue)', operations:'var(--amber)', mf:'var(--green)', dispatch:'var(--ink3)' };
+      drop.innerHTML = results.map(r => `
+        <div style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--divider)"
+          onmouseenter="this.style.background='var(--canvas)'" onmouseleave="this.style.background=''"
+          onclick="document.getElementById('global-search-drop').style.display='none';document.getElementById('global-search-input').value='';navigate('${r.module}')">
+          <span style="font-size:14px;color:${moduleColors[r.module]||'var(--ink3)'}">${r.icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)">${r.label}</div>
+            <div style="font-size:10px;color:var(--ink3)">${r.sub} &nbsp;·&nbsp; ${r.stage}</div>
+          </div>
+          <span style="font-size:9px;font-weight:700;color:var(--ink4);text-transform:uppercase">${r.module}</span>
+        </div>`).join('');
+    } catch(e) { drop.innerHTML='<div style="padding:8px 12px;font-size:11px;color:var(--red)">Search error: '+e.message+'</div>'; }
+  }, 320);
+}
+
+// Press / to focus search
+document.addEventListener('keydown', function(e) {
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
+    e.preventDefault();
+    const inp = document.getElementById('global-search-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+  if (e.key === 'Escape') {
+    const drop = document.getElementById('global-search-drop');
+    if (drop) drop.style.display='none';
+  }
+  // Alt+key shortcuts
+  if (e.altKey) {
+    const shortcuts = { s:'sales', o:'operations', d:'dispatch', m:'mf', u:'unloading', p:'profit', a:'account' };
+    const pg = shortcuts[e.key.toLowerCase()];
+    if (pg) { e.preventDefault(); navigate(pg); }
+  }
+});
+
+// =============================================
+// E-WAY BILL ALERTS
+// =============================================
+async function checkEwayAlerts() {
+  try {
+    const alerts = await call('getEwayAlerts');
+    const urgentCount = (alerts||[]).filter(a => a.group==='expired'||a.group==='today'||a.group==='soon').length;
+    const btn = document.getElementById('eway-alert-btn');
+    const cnt = document.getElementById('eway-alert-count');
+    const badge = document.getElementById('sb-eway-badge');
+    if (btn && urgentCount > 0) {
+      btn.style.display='block';
+      if (cnt) cnt.textContent = urgentCount;
+      if (badge) { badge.style.display='inline'; badge.textContent = urgentCount; }
+    } else {
+      if (btn) btn.style.display='none';
+      if (badge) badge.style.display='none';
+    }
+  } catch(e) {}
+}
+
+async function renderEwayAlerts() {
+  setContent('<div class="loading"><span class="spinner"></span>Loading E-Way data...</div>');
+  const alerts = await call('getEwayAlerts');
+
+  if (!alerts || alerts.length === 0) {
+    setContent(`<div class="section-card"><div style="text-align:center;padding:40px">
+      <div style="font-size:40px;margin-bottom:12px">✅</div>
+      <div style="font-size:15px;font-weight:700;color:var(--green)">All clear!</div>
+      <div style="font-size:12px;color:var(--ink3);margin-top:6px">No E-Way bills expiring within 2 days.</div>
+    </div></div>`);
+    return;
+  }
+
+  const groups = { expired: [], today: [], soon: [] };
+  alerts.forEach(a => { if (groups[a.group]) groups[a.group].push(a); });
+
+  const groupHtml = (title, color, bgColor, rows) => {
+    if (!rows.length) return '';
+    const rowsHtml = rows.map(r => `<tr>
+      <td class="mono" style="font-weight:700;color:var(--blue)">${r.SO_Number||'–'}</td>
+      <td class="mono">${r.Lorry_No||'–'}</td>
+      <td class="mono">${r.GC_No||'–'}</td>
+      <td class="mono">${r.Eway_Bill_No||'–'}</td>
+      <td style="font-weight:700;color:${color}">${r.Eway_Expiry ? new Date(r.Eway_Expiry).toLocaleDateString('en-IN') : '–'}</td>
+      <td>${r.broker_contact||'–'}</td>
+      <td>${r.driver_contact||'–'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="copyText('${r.Eway_Bill_No||''}','E-Way copied!')" title="Copy E-Way No">📋</button>
+        <button class="btn btn-outline btn-sm" onclick="copyText('${r.Lorry_No||''}+${r.GC_No||''}','Copied!')" title="Copy Lorry+GC">⧉</button>
+      </td>
+    </tr>`).join('');
+    return `<div class="section-card" style="border-top:3px solid ${color}">
+      <div class="section-title" style="color:${color}">
+        <span>${title} (${rows.length})</span>
+        <span style="font-size:11px;font-weight:400;color:var(--ink3)">Lorry No · GC No · E-Way No · Contact</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>SO No</th><th>Lorry No</th><th>GC No</th><th>E-Way Bill No</th><th>Expiry Date</th><th>Broker Contact</th><th>Driver Contact</th><th>Copy</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+  };
+
+  setContent(`
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div class="stat-card red" style="flex:1;min-width:140px">
+        <div class="stat-label">Expired</div>
+        <div class="stat-value" style="font-size:22px;color:var(--red)">${groups.expired.length}</div>
+      </div>
+      <div class="stat-card amber" style="flex:1;min-width:140px">
+        <div class="stat-label">Expiring Today</div>
+        <div class="stat-value" style="font-size:22px;color:var(--amber)">${groups.today.length}</div>
+      </div>
+      <div class="stat-card" style="flex:1;min-width:140px;border-top-color:#f59e0b">
+        <div class="stat-label">Within 2 Days</div>
+        <div class="stat-value" style="font-size:22px;color:#b45309">${groups.soon.length}</div>
+      </div>
+    </div>
+    ${groupHtml('🔴 Already Expired — Renew Immediately', 'var(--red)', 'var(--red-lt)', groups.expired)}
+    ${groupHtml('🟡 Expiring Today', 'var(--amber)', 'var(--amber-lt)', groups.today)}
+    ${groupHtml('⚠ Expiring Within 2 Days', '#b45309', '#fff7ed', groups.soon)}
+    <div style="font-size:11px;color:var(--ink3);margin-top:4px">* Only shows RUNNING trips. Auto-refreshes when you navigate here.</div>
+  `);
+}
+
+function copyText(text, msg) {
+  navigator.clipboard.writeText(text).then(()=>toast(msg||'Copied!')).catch(()=>{
+    const ta = document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast(msg||'Copied!');
+  });
+}
+
+// =============================================
+// TRIP PIPELINE TRACKER
+// =============================================
+async function renderPipeline() {
+  await loadMasters();
+  setContent('<div class="loading"><span class="spinner"></span>Loading pipeline data...</div>');
+  const rows = await call('getPipelineData');
+
+  const STAGES = [
+    { key:'s1_so',       label:'SO',       nav:'sales',      color:'#0969da' },
+    { key:'s2_ops',      label:'Trip',     nav:'operations', color:'#9a6700' },
+    { key:'s3_dispatch', label:'Dispatch', nav:'dispatch',   color:'#6e40c9' },
+    { key:'s4_mf',       label:'MF',       nav:'mf',         color:'#1a7f37' },
+    { key:'s5_unloading',label:'Unload',   nav:'unloading',  color:'#0969da' },
+    { key:'s6_profit',   label:'Profit',   nav:'profit',     color:'#1a7f37' }
+  ];
+
+  // filter state
+  let _pipeFilter = 'all';
+  let _pipeParty  = '';
+  let _pipeSearch = '';
+  let _pipePage   = 1;
+  const PAGE_SZ   = 60;
+
+  function stageHtml(row) {
+    return STAGES.map((s, i) => {
+      const done    = row[s.key];
+      const current = !done && (i===0 || row[STAGES[i-1].key]);
+      const bg   = done ? s.color : current ? '#fff8c5' : '#f6f8fa';
+      const col  = done ? '#fff'  : current ? '#9a6700' : '#8c959f';
+      const brd  = done ? s.color : current ? '#f0dc8a' : '#d0d7de';
+      return `<span onclick="navigate('${s.nav}')" style="cursor:pointer;display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:${bg};color:${col};border:1px solid ${brd};letter-spacing:.04em">${s.label}</span>`;
+    }).join(' ');
+  }
+
+  function currentStage(row) {
+    for (let i=STAGES.length-1; i>=0; i--) if (row[STAGES[i].key]) return i;
+    return -1;
+  }
+
+  function renderTable() {
+    let filtered = rows;
+    if (_pipeFilter === 'in-progress') filtered = filtered.filter(r => !r.s6_profit);
+    if (_pipeFilter === 'complete')    filtered = filtered.filter(r => r.s6_profit);
+    if (_pipeFilter === 'stalled')     filtered = filtered.filter(r => !r.s3_dispatch && r.s2_ops);
+    if (_pipeParty)  filtered = filtered.filter(r => String(r.Party_ID) === _pipeParty);
+    if (_pipeSearch) filtered = filtered.filter(r => (r.SO_Number||'').toLowerCase().includes(_pipeSearch)||
+                                                      (r.Lorry_No||'').toLowerCase().includes(_pipeSearch));
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SZ));
+    _pipePage = Math.min(_pipePage, totalPages);
+    const pageData = filtered.slice((_pipePage-1)*PAGE_SZ, _pipePage*PAGE_SZ);
+
+    const tbody = pageData.map(r => {
+      const stage = currentStage(r);
+      return `<tr>
+        <td class="mono" style="font-weight:700;color:var(--blue)">${r.SO_Number||'–'}</td>
+        <td style="font-size:11px">${getPartyName(r.Party_ID)||'–'}</td>
+        <td style="font-size:11px;white-space:nowrap">${getPlaceName(r.From_ID)}→${getPlaceName(r.To_ID)}</td>
+        <td class="mono" style="font-size:11px">${r.Lorry_No||'–'}</td>
+        <td style="white-space:nowrap">${stageHtml(r)}</td>
+        <td style="font-size:11px">${r.Loading_Date ? new Date(r.Loading_Date).toLocaleDateString('en-IN') : '–'}</td>
+        <td class="mono text-right" style="font-size:11px;${r.s6_profit?(parseFloat(r.Gross_Profit||0)>=0?'color:var(--green)':'color:var(--red)'):''}">${r.s6_profit?'₹'+fmt(r.Gross_Profit):'–'}</td>
+      </tr>`;
+    }).join('');
+
+    const completePct = rows.length>0 ? Math.round(rows.filter(r=>r.s6_profit).length/rows.length*100) : 0;
+
+    document.getElementById('pipeline-body').innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div class="stat-card" style="flex:1;min-width:110px;padding:10px 14px">
+          <div class="stat-label">Total SOs</div>
+          <div class="stat-value" style="font-size:20px">${rows.length}</div>
+        </div>
+        <div class="stat-card amber" style="flex:1;min-width:110px;padding:10px 14px">
+          <div class="stat-label">In Progress</div>
+          <div class="stat-value" style="font-size:20px">${rows.filter(r=>!r.s6_profit).length}</div>
+        </div>
+        <div class="stat-card green" style="flex:1;min-width:110px;padding:10px 14px">
+          <div class="stat-label">Completed</div>
+          <div class="stat-value" style="font-size:20px">${rows.filter(r=>r.s6_profit).length}</div>
+        </div>
+        <div class="stat-card" style="flex:1;min-width:110px;padding:10px 14px">
+          <div class="stat-label">Completion</div>
+          <div class="stat-value" style="font-size:20px">${completePct}%</div>
+        </div>
+      </div>
+      <div class="section-card">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">
+          <select onchange="_pipeFilter=this.value;_pipePage=1;renderTable()" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+            <option value="all">All SOs</option>
+            <option value="in-progress">In Progress</option>
+            <option value="complete">Completed</option>
+            <option value="stalled">Stalled at Dispatch</option>
+          </select>
+          <select onchange="_pipeParty=this.value;_pipePage=1;renderTable()" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+            <option value="">All Parties</option>
+            ${state.parties.map(p=>`<option value="${p.Party_ID}">${p.Party_Name}</option>`).join('')}
+          </select>
+          <input type="text" placeholder="Search SO / Lorry…" value="${_pipeSearch}"
+            oninput="_pipeSearch=this.value.toLowerCase();_pipePage=1;renderTable()"
+            style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:180px">
+          <span style="font-size:11px;color:var(--ink3);margin-left:4px">Showing <b>${(_pipePage-1)*PAGE_SZ+1}–${Math.min(_pipePage*PAGE_SZ,filtered.length)}</b> of <b>${filtered.length}</b></span>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>SO No</th><th>Party</th><th>Route</th><th>Lorry</th><th>Pipeline Stage</th><th>Load Date</th><th style="text-align:right">Profit</th></tr></thead>
+          <tbody>${tbody||'<tr><td colspan="7" class="loading">No records</td></tr>'}</tbody>
+        </table></div>
+        ${renderPagination(_pipePage, totalPages, 'function(p){_pipePage=p;renderTable()}')}
+      </div>`;
+  }
+
+  setContent('<div id="pipeline-body"><div class="loading"><span class="spinner"></span></div></div>');
+  renderTable();
+}
+
+// =============================================
+// PARTY LEDGER
+// =============================================
+async function renderPartyLedger() {
+  await loadMasters();
+  setContent(`
+    <div class="section-card">
+      <div class="section-title">Party-wise Ledger</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+        <div class="form-group" style="min-width:220px">
+          <label>Select Party</label>
+          <select id="ledger-party" onchange="loadPartyLedger()">
+            <option value="">-- All Parties --</option>
+            ${state.parties.map(p=>`<option value="${p.Party_ID}">${p.Party_Name}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadPartyLedger()">🔍 Load</button>
+        <button class="btn btn-outline btn-sm" onclick="downloadLedgerExcel()">⬇ Excel</button>
+      </div>
+      <div id="ledger-summary" style="display:none;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px"></div>
+      <div id="ledger-table-wrap"><div class="loading" style="color:var(--ink3)">Select a party and click Load.</div></div>
+    </div>`);
+}
+
+let _ledgerData = [];
+async function loadPartyLedger() {
+  const partyId = document.getElementById('ledger-party')?.value || '';
+  document.getElementById('ledger-table-wrap').innerHTML='<div class="loading"><span class="spinner"></span>Loading…</div>';
+  try {
+    const rows = await call('getPartyLedger', partyId || null);
+    _ledgerData = rows || [];
+    renderLedgerTable();
+  } catch(e) { document.getElementById('ledger-table-wrap').innerHTML=`<div class="loading" style="color:var(--red)">Error: ${e}</div>`; }
+}
+
+function renderLedgerTable() {
+  const rows = _ledgerData;
+  const wrap = document.getElementById('ledger-table-wrap');
+  if (!rows || !rows.length) { wrap.innerHTML='<div class="loading">No records found.</div>'; return; }
+
+  const totalTrips = rows.length;
+  const totalMT    = rows.reduce((s,r)=>s+r.Final_MT,0);
+  const totalRev   = rows.reduce((s,r)=>s+r.Bilti_Freight,0);
+  const totalProfit= rows.reduce((s,r)=>s+r.Gross_Profit,0);
+  const avgMargin  = totalTrips>0?(totalProfit/totalTrips):0;
+  const done       = rows.filter(r=>r.Profit_Done).length;
+
+  const summEl = document.getElementById('ledger-summary');
+  if (summEl) {
+    summEl.style.display='grid';
+    summEl.innerHTML = [
+      ['Total Trips', totalTrips, 'badge-blue'],
+      ['Total MT', totalMT.toFixed(1)+' MT', 'badge-blue'],
+      ['Total Revenue', '₹'+fmt(totalRev), 'badge-green'],
+      ['Total Profit', '₹'+fmt(totalProfit), totalProfit>=0?'badge-green':'badge-red']
+    ].map(([l,v,b])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-value" style="font-size:17px;font-family:var(--mono)">${v}</div></div>`).join('');
+  }
+
+  const convertedPill = c => {
+    if (c==='YES') return '<span class="badge b-yes">Converted</span>';
+    if (c==='NO')  return '<span class="badge" style="background:#ffebe9;color:var(--red)">No</span>';
+    return '<span class="badge b-pending">Pending</span>';
+  };
+  const tableRows = rows.map(r=>`<tr>
+    <td class="mono" style="font-weight:700;color:var(--blue)">${r.SO_Number}</td>
+    <td style="font-size:11px">${getPartyName(r.Party_ID)}</td>
+    <td style="font-size:11px;white-space:nowrap">${getPlaceName(r.From_ID)}→${getPlaceName(r.To_ID)}</td>
+    <td class="mono" style="font-size:11px">${r.MF_No||'–'}</td>
+    <td class="mono text-right">${r.MT}</td>
+    <td class="mono text-right">${r.Final_MT||'–'}</td>
+    <td class="mono text-right">${r.Bilti_Freight?'₹'+fmt(r.Bilti_Freight):'–'}</td>
+    <td class="mono text-right">${r.Total_Cost?'₹'+fmt(r.Total_Cost):'–'}</td>
+    <td class="mono text-right" style="${r.Gross_Profit>0?'color:var(--green)':r.Gross_Profit<0?'color:var(--red)':''}">${r.Gross_Profit?'₹'+fmt(r.Gross_Profit):'–'}</td>
+    <td class="mono text-right">${r.GP_Pct?r.GP_Pct+'%':'–'}</td>
+    <td>${convertedPill(r.Converted)}</td>
+    <td>${r.Profit_Done?'<span class="badge b-yes">Done</span>':'<span class="badge" style="background:#fff8c5;color:#9a6700;border:1px solid #f0dc8a">Pending</span>'}</td>
+  </tr>`).join('');
+
+  wrap.innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>SO No</th><th>Party</th><th>Route</th><th>MF No</th><th style="text-align:right">SO MT</th><th style="text-align:right">Final MT</th><th style="text-align:right">Revenue</th><th style="text-align:right">Cost</th><th style="text-align:right">Profit</th><th style="text-align:right">GP%</th><th>Converted</th><th>Profit</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+    <tfoot><tr>
+      <td colspan="4" style="font-weight:700;font-size:11px;color:var(--amber)">TOTAL (${totalTrips} SOs)</td>
+      <td class="mono text-right">${rows.reduce((s,r)=>s+r.MT,0).toFixed(1)}</td>
+      <td class="mono text-right">${totalMT.toFixed(1)}</td>
+      <td class="mono text-right">₹${fmt(totalRev)}</td>
+      <td class="mono text-right">₹${fmt(rows.reduce((s,r)=>s+r.Total_Cost,0))}</td>
+      <td class="mono text-right" style="${totalProfit>=0?'color:var(--green)':'color:var(--red)'}">₹${fmt(totalProfit)}</td>
+      <td></td><td></td><td></td>
+    </tr></tfoot>
+  </table></div>`;
+}
+
+function downloadLedgerExcel() {
+  if (!_ledgerData.length) { toast('Load data first','error'); return; }
+  const partyName = document.getElementById('ledger-party');
+  const pName = partyName?.options[partyName.selectedIndex]?.text || 'All Parties';
+  const ws = XLSX.utils.json_to_sheet(_ledgerData.map(r=>({
+    'SO Number': r.SO_Number, 'Party': getPartyName(r.Party_ID),
+    'From': getPlaceName(r.From_ID), 'To': getPlaceName(r.To_ID),
+    'SO MT': r.MT, 'Final MT': r.Final_MT,
+    'Revenue (₹)': r.Bilti_Freight, 'Cost (₹)': r.Total_Cost,
+    'Gross Profit (₹)': r.Gross_Profit, 'GP%': r.GP_Pct, 'Status': r.Profit_Done?'Done':'Pending'
+  })));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, pName.slice(0,31));
+  XLSX.writeFile(wb, 'Party_Ledger_'+pName.replace(/[^a-z0-9]/gi,'_').slice(0,20)+'.xlsx');
+  toast('Excel downloaded!');
+}
+
+// =============================================
+// MONTHLY P&L
+// =============================================
+async function renderMonthlyPL() {
+  const curYear = new Date().getFullYear();
+  setContent(`
+    <div class="section-card">
+      <div class="section-title">
+        <span>Monthly P&L Summary</span>
+        <select id="pl-year" onchange="loadMonthlyPL()" style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-weight:600">
+          ${[curYear, curYear-1, curYear-2].map(y=>`<option value="${y}"${y===curYear?' selected':''}>${y}</option>`).join('')}
+          <option value="">All Years</option>
+        </select>
+      </div>
+      <div id="pl-content"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+    </div>`);
+  loadMonthlyPL();
+}
+
+async function loadMonthlyPL() {
+  const year = document.getElementById('pl-year')?.value || '';
+  const wrap = document.getElementById('pl-content');
+  if (!wrap) return;
+  wrap.innerHTML='<div class="loading"><span class="spinner"></span>Loading…</div>';
+  try {
+    const data = await call('getMonthlyPL', year || null);
+    if (!data || !data.length) { wrap.innerHTML='<div class="loading">No profit records found.</div>'; return; }
+
+    const maxRev = Math.max(...data.map(d=>d.revenue),1);
+    const totalRev    = data.reduce((s,d)=>s+d.revenue,0);
+    const totalCost   = data.reduce((s,d)=>s+d.cost,0);
+    const totalProfit = data.reduce((s,d)=>s+d.profit,0);
+    const bestMonth   = data.reduce((b,d)=>d.profit>b.profit?d:b, data[0]);
+    const worstMonth  = data.reduce((w,d)=>d.profit<w.profit?d:w, data[0]);
+
+    // Summary stats
+    const summHtml = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:16px;font-family:var(--mono)">₹${fmt(totalRev)}</div></div>
+      <div class="stat-card red"><div class="stat-label">Total Cost</div><div class="stat-value" style="font-size:16px;font-family:var(--mono)">₹${fmt(totalCost)}</div></div>
+      <div class="stat-card ${totalProfit>=0?'green':'red'}"><div class="stat-label">Gross Profit</div><div class="stat-value" style="font-size:16px;font-family:var(--mono);color:${totalProfit>=0?'var(--green)':'var(--red)'}">₹${fmt(totalProfit)}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Best Month</div><div class="stat-value" style="font-size:13px;font-family:var(--mono)">${bestMonth.label}</div><span class="stat-badge badge-green">₹${fmt(bestMonth.profit)}</span></div>
+    </div>`;
+
+    // Bar chart (CSS-based, no canvas needed)
+    const chartHtml = `<div style="background:var(--canvas);border:1px solid var(--border);border-radius:4px;padding:16px;margin-bottom:16px;overflow-x:auto">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin-bottom:12px">Revenue vs Cost by Month</div>
+      <div style="display:flex;align-items:flex-end;gap:8px;min-width:${data.length*64}px;height:120px;padding-bottom:20px;position:relative">
+        ${data.map((d,i) => {
+          const revH = Math.round((d.revenue/maxRev)*100);
+          const costH= Math.round((d.cost/maxRev)*100);
+          return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:52px">
+            <div style="display:flex;align-items:flex-end;gap:2px;height:100px">
+              <div style="width:14px;background:var(--green);height:${revH}%;border-radius:2px 2px 0 0;opacity:.8" title="Rev ₹${fmt(d.revenue)}"></div>
+              <div style="width:14px;background:var(--red);height:${costH}%;border-radius:2px 2px 0 0;opacity:.8" title="Cost ₹${fmt(d.cost)}"></div>
+            </div>
+            <div style="font-size:9px;color:var(--ink3);font-weight:600;white-space:nowrap;transform:rotate(-35deg);transform-origin:top left;margin-top:4px;margin-left:4px">${d.label}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:16px;margin-top:8px;font-size:10px">
+        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:var(--green);border-radius:2px;opacity:.8"></span>Revenue</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:var(--red);border-radius:2px;opacity:.8"></span>Cost</span>
+      </div>
+    </div>`;
+
+    // Table
+    const tableHtml = `<div class="table-wrap"><table>
+      <thead><tr><th>Month</th><th style="text-align:right">Trips</th><th style="text-align:right">Total MT</th><th style="text-align:right">Revenue (₹)</th><th style="text-align:right">Cost (₹)</th><th style="text-align:right">Gross Profit (₹)</th><th style="text-align:right">GP%</th></tr></thead>
+      <tbody>${data.map(d=>{
+        const gp = d.revenue>0?Math.round((d.profit/d.revenue)*100):0;
+        const isBest = d===bestMonth, isWorst = d===worstMonth;
+        return `<tr style="${isBest?'background:#dafbe1':isWorst&&d.profit<0?'background:#ffebe9':''}">
+          <td style="font-weight:700">${d.label}${isBest?' 🏆':''}</td>
+          <td class="mono text-right">${d.trips}</td>
+          <td class="mono text-right">${d.mt.toFixed(1)}</td>
+          <td class="mono text-right">₹${fmt(d.revenue)}</td>
+          <td class="mono text-right">₹${fmt(d.cost)}</td>
+          <td class="mono text-right" style="${d.profit>=0?'color:var(--green)':'color:var(--red)'}">₹${fmt(d.profit)}</td>
+          <td class="mono text-right" style="${gp>=0?'color:var(--green)':'color:var(--red)'}"> ${gp}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+      <tfoot><tr>
+        <td style="font-weight:700;color:var(--amber)">TOTAL</td>
+        <td class="mono text-right">${data.reduce((s,d)=>s+d.trips,0)}</td>
+        <td class="mono text-right">${data.reduce((s,d)=>s+d.mt,0).toFixed(1)}</td>
+        <td class="mono text-right">₹${fmt(totalRev)}</td>
+        <td class="mono text-right">₹${fmt(totalCost)}</td>
+        <td class="mono text-right" style="${totalProfit>=0?'color:var(--green)':'color:var(--red)'}">₹${fmt(totalProfit)}</td>
+        <td class="mono text-right">${totalRev>0?Math.round(totalProfit/totalRev*100):0}%</td>
+      </tr></tfoot>
+    </table></div>`;
+
+    wrap.innerHTML = summHtml + chartHtml + tableHtml;
+  } catch(e) { wrap.innerHTML=`<div class="loading" style="color:var(--red)">Error: ${e}</div>`; }
+}
+
+// =============================================
+// BROKER OUTSTANDING
+// =============================================
+let _brokerOutData   = [];
+let _brokerOutFilter = '';
+
+async function renderBrokerOutstanding() {
+  await loadMasters();
+  setContent(`
+    <div id="bo-summary-strip" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+    <div class="section-card" style="margin-bottom:12px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="min-width:240px;margin:0">
+          <label style="font-size:11px;font-weight:700">Filter by Broker</label>
+          <select id="bo-broker-filter" onchange="filterBrokerOutstanding(this.value)"
+            style="width:100%;padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+            <option value="">-- All Brokers --</option>
+            ${state.brokers.map(b=>`<option value="${b.Broker_ID}">${b.Broker_Name}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadBrokerOutstanding()">↺ Refresh</button>
+      </div>
+    </div>
+    <div id="bo-content"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+  `);
+  loadBrokerOutstanding();
+}
+
+async function loadBrokerOutstanding() {
+  document.getElementById('bo-content').innerHTML = '<div class="loading"><span class="spinner"></span>Loading broker data…</div>';
+  try {
+    _brokerOutData = await call('getBrokerOutstanding') || [];
+    _brokerOutFilter = document.getElementById('bo-broker-filter')?.value || '';
+    renderBrokerOutTable();
+  } catch(e) {
+    document.getElementById('bo-content').innerHTML = `<div class="loading" style="color:var(--red)">Error: ${e}</div>`;
+  }
+}
+
+function filterBrokerOutstanding(val) {
+  _brokerOutFilter = val;
+  renderBrokerOutTable();
+}
+
+function renderBrokerOutTable() {
+  const wrap = document.getElementById('bo-content');
+  if (!wrap) return;
+  let brokers = _brokerOutData;
+  if (_brokerOutFilter) brokers = brokers.filter(b => String(b.Broker_ID) === String(_brokerOutFilter));
+
+  // Update summary strip
+  const totalOutstanding = _brokerOutData.reduce((s,b)=>s+b.total_outstanding,0);
+  const sumEl = document.getElementById('bo-summary-strip');
+  if (sumEl) sumEl.innerHTML = `
+    <div class="stat-card red" style="flex:1;min-width:130px">
+      <div class="stat-label">Total Outstanding</div>
+      <div class="stat-value" style="font-size:16px;font-family:var(--mono);color:var(--red)">₹${fmt(totalOutstanding)}</div>
+    </div>
+    <div class="stat-card amber" style="flex:1;min-width:130px">
+      <div class="stat-label">Pending Advance</div>
+      <div class="stat-value" style="font-size:16px;font-family:var(--mono);color:var(--amber)">₹${fmt(_brokerOutData.reduce((s,b)=>s+b.pending_adv,0))}</div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:130px;border-top-color:var(--blue)">
+      <div class="stat-label">Pending Balance</div>
+      <div class="stat-value" style="font-size:16px;font-family:var(--mono);color:var(--blue)">₹${fmt(_brokerOutData.reduce((s,b)=>s+b.pending_bal,0))}</div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:130px">
+      <div class="stat-label">Brokers with Dues</div>
+      <div class="stat-value" style="font-size:16px">${_brokerOutData.length}</div>
+    </div>`;
+
+  if (!brokers.length) {
+    wrap.innerHTML = '<div class="loading" style="color:var(--green)">✅ No outstanding payments for the selected broker.</div>';
+    return;
+  }
+
+  const statusPill = s => {
+    const map = { COMPLETED:'✅ Completed', BAL_PENDING:'⏳ Bal Pending', PENDING:'❌ Adv Not Paid', NOT_PAID:'❌ Adv Not Paid' };
+    const col  = { COMPLETED:'var(--green)', BAL_PENDING:'var(--amber)', PENDING:'var(--red)', NOT_PAID:'var(--red)' };
+    return `<span style="font-size:10px;font-weight:700;color:${col[s]||'var(--ink3)'}">${map[s]||s}</span>`;
+  };
+
+  wrap.innerHTML = brokers.map(b => `
+    <div class="section-card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink)">${b.Broker_Name}</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">📞 ${b.Contact||'No contact on file'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--red)">₹${fmt(b.total_outstanding)}</div>
+          <div style="font-size:10px;color:var(--ink3)">Total Outstanding (${b.trips.length} trip${b.trips.length!==1?'s':''})</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;padding:10px;background:var(--canvas);border-radius:4px;border:1px solid var(--divider)">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Advance Account</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700">${b.Acc_No||'–'}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--ink3)">${b.IFSC||'–'}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.Acc_No}','Acc No copied!')">📋 Acc No</button>
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.IFSC}','IFSC copied!')">📋 IFSC</button>
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.Acc_No}\n${b.IFSC}','Adv A/C details copied!')">📋 Both</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Balance Account</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700">${b.Bal_Acc||b.Acc_No||'–'}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--ink3)">${b.Bal_IFSC||b.IFSC||'–'}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.Bal_Acc||b.Acc_No}','Bal Acc copied!')">📋 Acc No</button>
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.Bal_IFSC||b.IFSC}','IFSC copied!')">📋 IFSC</button>
+            <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="copyText('${b.Bal_Acc||b.Acc_No}\n${b.Bal_IFSC||b.IFSC}','Bal A/C details copied!')">📋 Both</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap">
+        <div><span style="font-size:10px;color:var(--ink3)">Pending Advance:</span> <span style="font-family:var(--mono);font-weight:700;color:var(--amber)">₹${fmt(b.pending_adv)}</span></div>
+        <div><span style="font-size:10px;color:var(--ink3)">Pending Balance:</span> <span style="font-family:var(--mono);font-weight:700;color:var(--blue)">₹${fmt(b.pending_bal)}</span></div>
+      </div>
+
+      <div class="table-wrap">
+        <table style="font-size:11px">
+          <thead><tr>
+            <th>MF No</th><th>SO No</th><th>Lorry No</th>
+            <th style="text-align:right">Freight</th>
+            <th style="text-align:right">Adv Owed</th>
+            <th style="text-align:right">Bal Owed</th>
+            <th>Payment Status</th>
+            <th>Adv TxnID</th>
+          </tr></thead>
+          <tbody>${b.trips.map(t=>`<tr>
+            <td class="mono">${t.MF_No||'–'}</td>
+            <td class="mono" style="color:var(--blue)">${t.SO_Number||'–'}</td>
+            <td class="mono">${t.Lorry_No||'–'}</td>
+            <td class="mono text-right">₹${fmt(t.Freight_MF)}</td>
+            <td class="mono text-right" style="color:var(--amber);font-weight:700">₹${fmt(t.Adv_Owed)}</td>
+            <td class="mono text-right" style="color:var(--blue);font-weight:700">₹${fmt(t.Bal_Owed)}</td>
+            <td>${statusPill(t.Status)}</td>
+            <td class="mono" style="font-size:10px;color:var(--ink3)">${t.Adv_TxnID||'–'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`).join('');
+}
+
+// =============================================
+// CONFIRM DELETE MODAL
+// =============================================
+function confirmDelete(title, warningText, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML=`
+    <div style="background:#fff;border-radius:8px;padding:24px;width:400px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+      <div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:8px">⚠ ${title}</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">${warningText}</div>
+      <div style="font-size:11px;color:var(--ink2);margin-bottom:6px;font-weight:700">Type <code style="background:var(--red-lt);color:var(--red);padding:1px 5px;border-radius:3px">DELETE</code> to confirm:</div>
+      <input type="text" id="confirm-del-input" placeholder="Type DELETE" style="width:100%;padding:8px 10px;border:2px solid var(--border);border-radius:4px;font-size:13px;margin-bottom:14px" oninput="document.getElementById('confirm-del-btn').disabled=this.value!=='DELETE'">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="this.closest('[style*=fixed]').remove()">Cancel</button>
+        <button id="confirm-del-btn" class="btn" disabled style="background:var(--red);color:#fff;border-color:var(--red);padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:700"
+          onclick="this.closest('[style*=fixed]').remove();(${onConfirm.toString()})()">Delete</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(()=>document.getElementById('confirm-del-input')?.focus(),100);
+}
+
+// =============================================
+// KEYBOARD SHORTCUTS REFERENCE
+// =============================================
+function renderShortcuts() {
+  setContent(`
+    <div class="section-card" style="max-width:560px;margin:0 auto">
+      <div class="section-title">⌨ Keyboard Shortcuts</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${[
+          ['/', 'Focus global search bar'],
+          ['Escape', 'Close search / close modals'],
+          ['Alt + S', 'Go to Sales — SO Entry'],
+          ['Alt + O', 'Go to Operations'],
+          ['Alt + D', 'Go to Dispatch'],
+          ['Alt + M', 'Go to MF Accounts'],
+          ['Alt + U', 'Go to Unloading'],
+          ['Alt + P', 'Go to Profit Analysis'],
+          ['Alt + A', 'Go to Account Payment'],
+          ['?', 'Show this shortcuts page'],
+        ].map(([k,d])=>`<tr style="border-bottom:1px solid var(--divider)">
+          <td style="padding:10px 8px;width:160px">
+            <kbd style="background:var(--canvas);border:1px solid var(--border);border-bottom:2px solid var(--border2);border-radius:4px;padding:3px 8px;font-family:var(--mono);font-size:11px;font-weight:700">${k}</kbd>
+          </td>
+          <td style="padding:10px 8px;font-size:13px;color:var(--ink2)">${d}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`);
 }
 
 // =============================================
@@ -4859,6 +5945,8 @@ window.onload = function() {
       document.getElementById('login-screen').style.display = 'none';
       renderDashboard();
       loadMasters().catch(function() {});
+      setTimeout(function(){ checkEwayAlerts(); }, 3000);
+      setInterval(function(){ checkEwayAlerts(); }, 10*60*1000);
       return;
     } catch(e) {
       try { sessionStorage.removeItem('tms_auth'); } catch(e2) {}
